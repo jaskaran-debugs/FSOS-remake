@@ -30,7 +30,7 @@ export default function Distribution() {
         {TABS.map(([v, l]) => <button key={v} data-testid={`dist-tab-${v}`} onClick={() => setTab(v)} className={cn("px-3 py-1.5 text-xs font-medium rounded transition-colors", tab === v ? "bg-white shadow-sm text-stone-900" : "text-stone-500 hover:text-stone-800")}>{l}</button>)}
       </div>
       {tab === "bank" && <Bank />}
-      {tab === "calendar" && <NetworkCalendar />}
+      {tab === "calendar" && <CalendarView />}
       {tab === "matrix" && <IdeaMatrix />}
       {tab === "today" && <Today />}
       <BulkPlacement open={bulkOpen} onOpenChange={setBulkOpen} />
@@ -195,6 +195,92 @@ function Field({ label, value, children }) {
 }
 
 /* ---------------- NETWORK CALENDAR ---------------- */
+function CalendarView() {
+  const [mode, setMode] = useState("network");
+  return (
+    <div>
+      <div className="inline-flex rounded-md border border-stone-200 bg-white p-0.5 mb-3">
+        {[["network", "Network"], ["ip", "Individual IP"]].map(([v, l]) => (
+          <button key={v} data-testid={`calendar-mode-${v}`} onClick={() => setMode(v)} className={cn("px-3 py-1 text-xs font-medium rounded transition-colors", mode === v ? "bg-stone-900 text-white" : "text-stone-500 hover:text-stone-800")}>{l}</button>
+        ))}
+      </div>
+      {mode === "network" ? <NetworkCalendar /> : <IPWeekView />}
+    </div>
+  );
+}
+
+function IPWeekView() {
+  const { db, today } = useDemo();
+  const { openIdea } = useUI();
+  const [ipId, setIpId] = useState(db.ips[0]?.id);
+  const [weekStart, setWeekStart] = useState(today);
+  const [displace, setDisplace] = useState(null);
+  const ip = ipById(db, ipId);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <FSel value={ipId} onChange={setIpId} options={db.ips.map((i) => [i.id, i.code])} />
+        <div className="flex items-center gap-2 ml-2">
+          <Button size="sm" variant="outline" className="h-8" onClick={() => setWeekStart(addDays(weekStart, -7))}><Icons.ChevronLeft className="h-4 w-4" /></Button>
+          <span className="text-xs text-stone-500">{fmtDate(days[0])} – {fmtDate(days[6])}</span>
+          <Button size="sm" variant="outline" className="h-8" onClick={() => setWeekStart(addDays(weekStart, 7))}><Icons.ChevronRight className="h-4 w-4" /></Button>
+          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setWeekStart(today)}>This week</Button>
+        </div>
+        <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-stone-500"><IPBadge ip={ip} showName /> · floor {ip?.floors.posts}P · {ip?.floors.reels}R/day</span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-2" data-testid="ipweek-grid">
+        {days.map((d) => {
+          const pls = db.placements.filter((p) => p.ipId === ipId && p.date === d && p.state !== "cancelled");
+          let planP = 0, planR = 0;
+          pls.forEach((p) => { const v = db.versions.find((x) => x.id === p.versionId); const idea = v && ideaById(db, v.ideaId); if (idea) { const fc = formatCounts(idea.format); planP += fc.posts; planR += fc.reels; } });
+          const shortfall = planP < (ip?.floors.posts || 0) || planR < (ip?.floors.reels || 0);
+          return (
+            <div key={d} className={cn("rounded-lg border bg-white p-2 min-h-[160px]", d === today ? "border-blue-300" : "border-[#E6E1D8]")} data-testid={`ipweek-day-${d}`}>
+              <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-stone-100">
+                <div><div className="text-[10px] text-stone-400">{weekdayShort(d)}</div><div className="font-mono text-[11px] text-stone-700">{fmtDate(d)}</div></div>
+                <div className={cn("text-[9px] text-right", shortfall ? "text-amber-700" : "text-stone-400")}>{planP}P·{planR}R<div className="text-stone-300">/{ip?.floors.posts}·{ip?.floors.reels}</div></div>
+              </div>
+              <div className="space-y-1.5">
+                {pls.map((p) => {
+                  const v = db.versions.find((x) => x.id === p.versionId);
+                  const idea = v && ideaById(db, v.ideaId);
+                  if (!idea) return null;
+                  const pub = publicationOf(db, v.id);
+                  const dups = sameDayConflict(db, p); // same idea on other IPs same date (all-page context)
+                  const isBO = idea.stream === "BO";
+                  return (
+                    <div key={p.id} className="rounded-md border border-stone-200 p-1.5" data-testid={`ipweek-card-${p.id}`}>
+                      <div className="flex items-center gap-1 mb-0.5"><StreamBadge stream={idea.stream} /><FormatBadge format={idea.format} />{p.time && <span className="font-mono text-[9px] text-stone-500 ml-auto">{p.time}</span>}</div>
+                      <button onClick={() => openIdea(idea.id)} className="text-left text-[11px] text-stone-800 leading-tight line-clamp-2 hover:underline">{idea.title}</button>
+                      <div className="mt-1 flex items-center gap-1 flex-wrap">
+                        {pub ? <span className="text-[9px] rounded px-1 py-0.5 bg-stone-800 text-white">published</span> : v.reviewStatus === "ready" ? <span className="text-[9px] rounded px-1 py-0.5 bg-emerald-100 text-emerald-800">ready</span> : <span className="text-[9px] rounded px-1 py-0.5 bg-indigo-100 text-indigo-800">pending prod</span>}
+                        {p.exceptionReason && <span className="text-[9px] rounded px-1 py-0.5 bg-amber-100 text-amber-800" title={p.exceptionReason}>exception</span>}
+                        {dups.length > 0 && !p.exceptionReason && (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] rounded px-1 py-0.5 bg-rose-100 text-rose-800" title="Same idea also placed on another IP this date — duplication needs an authorised exception">
+                            <Icons.Copy className="h-2.5 w-2.5" /> also {dups.map((c) => ipById(db, c.ipId)?.code).join(", ")}
+                          </span>
+                        )}
+                      </div>
+                      {isBO && !pub && (
+                        <button data-testid={`ipweek-displace-${p.id}`} onClick={() => setDisplace({ boVersionId: v.id, ipId, date: d })} className="mt-1 text-[9px] text-[#C0512F] hover:underline inline-flex items-center gap-0.5"><Icons.Zap className="h-2.5 w-2.5" /> displace with HPN</button>
+                      )}
+                    </div>
+                  );
+                })}
+                {!pls.length && <div className="text-[10px] text-stone-300 text-center py-6">No content</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[10px] text-stone-400">Readable per-IP week schedule with content previews, readiness and optional order/time. Duplication checks retain all-page context: a rose "also on …" flag means the same idea is on another IP that IST date and needs an authorised exception.</p>
+      <ReplacementDialog open={!!displace} onClose={() => setDisplace(null)} boVersionId={displace?.boVersionId} ipId={displace?.ipId} date={displace?.date} />
+    </div>
+  );
+}
+
 function NetworkCalendar() {
   const { db, actions, today } = useDemo();
   const { openIdea } = useUI();
