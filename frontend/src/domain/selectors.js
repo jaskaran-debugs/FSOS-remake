@@ -220,3 +220,31 @@ export function searchIdeas(db, q) {
     i.destinations.some((ipId) => ipById(db, ipId)?.code.toLowerCase().includes(s)) ||
     db.batches.find((b) => b.id === i.batchId)?.name.toLowerCase().includes(s)).slice(0, 12);
 }
+
+// same-day repetition: other active placements of the SAME idea on the SAME date (different version/IP)
+export function sameDayConflict(db, placement) {
+  if (!placement || placement.exceptionReason) return [];
+  const v = db.versions.find((x) => x.id === placement.versionId);
+  if (!v) return [];
+  return db.placements.filter((p) => p.id !== placement.id && p.state !== "cancelled" && p.date === placement.date &&
+    db.versions.find((vv) => vv.id === p.versionId)?.ideaId === v.ideaId);
+}
+
+// upcoming dates where an IP has spare capacity for a given format (planned < floor)
+export function candidateGaps(db, ipId, format, fromDate, n = 10) {
+  const ip = ipById(db, ipId);
+  if (!ip) return [];
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const date = addDays(fromDate, i);
+    let planned = 0;
+    db.placements.filter((p) => p.ipId === ipId && p.date === date && p.state !== "cancelled").forEach((p) => {
+      const v = db.versions.find((x) => x.id === p.versionId);
+      const idea = v && ideaById(db, v.ideaId);
+      if (idea) planned += (format === "Reel" ? formatCounts(idea.format).reels : formatCounts(idea.format).posts);
+    });
+    const floor = format === "Reel" ? ip.floors.reels : ip.floors.posts;
+    if (planned < Math.max(floor, 1)) out.push({ date, planned, floor });
+  }
+  return out;
+}

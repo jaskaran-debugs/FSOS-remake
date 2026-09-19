@@ -4,7 +4,7 @@ import { useDemo } from "../domain/store";
 import { useUI } from "../components/idea/IdeaModalProvider";
 import { PageHeader } from "../components/common/PageHeader";
 import { StreamBadge, StatusBadge, FormatBadge, IPBadge, VersionBadge, PerfBadge } from "../components/common/badges";
-import { versionsOf, ideaById, ipById, userById, activePlacementOf, publicationOf, snapshotOf, readyBankVersions, bankSummary, targetFor, classify } from "../domain/selectors";
+import { versionsOf, ideaById, ipById, userById, activePlacementOf, publicationOf, snapshotOf, readyBankVersions, bankSummary, targetFor, classify, sameDayConflict } from "../domain/selectors";
 import { formatCounts } from "../domain/constants";
 import { fmtDate, weekdayShort, addDays, nowIso, istTimeStr } from "../domain/dates";
 import { Button } from "../components/ui/button";
@@ -14,6 +14,7 @@ import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
 import { cn } from "../lib/utils";
 import BulkPlacement from "../components/distribution/BulkPlacement";
+import ReplacementDialog from "../components/distribution/ReplacementDialog";
 
 const TABS = [["bank", "Bank"], ["calendar", "Calendar"], ["matrix", "Idea Matrix"], ["today", "Today"]];
 
@@ -196,8 +197,10 @@ function Field({ label, value, children }) {
 /* ---------------- NETWORK CALENDAR ---------------- */
 function NetworkCalendar() {
   const { db, actions, today } = useDemo();
+  const { openIdea } = useUI();
   const [start, setStart] = useState(today);
   const [sel, setSel] = useState(null); // {ipId, date}
+  const [displace, setDisplace] = useState(null); // {boVersionId, ipId, date}
   const days = Array.from({ length: 10 }, (_, i) => addDays(start, i));
 
   return (
@@ -233,8 +236,10 @@ function NetworkCalendar() {
                         className={cn("border-b border-stone-100 p-1 align-top cursor-pointer hover:bg-blue-50/40", isSel && "ring-2 ring-blue-400 bg-blue-50/60")}>
                         <div className="flex items-center justify-between text-[9px] text-stone-400"><span>{planP}P/{planR}R</span><span className="text-stone-300">/ {ip.floors.posts}·{ip.floors.reels}</span></div>
                         <div className="space-y-0.5 mt-0.5">
-                          {pls.slice(0, 3).map((p) => { const v = db.versions.find((x) => x.id === p.versionId); const idea = ideaById(db, v?.ideaId); const isPub = publicationOf(db, v?.id); return (
-                            <div key={p.id} className={cn("rounded px-1 py-0.5 text-[9px] truncate", isPub ? "bg-stone-800 text-white" : v?.reviewStatus === "ready" ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800")} title={idea?.title}>{idea?.title}</div>
+                          {pls.slice(0, 3).map((p) => { const v = db.versions.find((x) => x.id === p.versionId); const idea = ideaById(db, v?.ideaId); const isPub = publicationOf(db, v?.id); const isBO = idea?.stream === "BO"; return (
+                            <button key={p.id} data-testid={`cal-chip-${p.id}`}
+                              onClick={(e) => { e.stopPropagation(); if (isBO && !isPub) setDisplace({ boVersionId: v.id, ipId: ip.id, date: d }); else openIdea(idea.id); }}
+                              className={cn("block w-full text-left rounded px-1 py-0.5 text-[9px] truncate transition-colors hover:ring-1 hover:ring-stone-400", isPub ? "bg-stone-800 text-white" : v?.reviewStatus === "ready" ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800")} title={isBO && !isPub ? `${idea?.title} — click to displace with HPN` : idea?.title}>{idea?.title}</button>
                           ); })}
                           {pls.length > 3 && <div className="text-[9px] text-stone-400">+{pls.length - 3} more</div>}
                           {reservedR > 0 && <div className="text-[9px] text-amber-600">{reservedR}R HPN reserve</div>}
@@ -249,6 +254,7 @@ function NetworkCalendar() {
         </div>
       </div>
       {sel && <BankDrawer sel={sel} onClose={() => setSel(null)} />}
+      <ReplacementDialog open={!!displace} onClose={() => setDisplace(null)} boVersionId={displace?.boVersionId} ipId={displace?.ipId} date={displace?.date} />
     </div>
   );
 }
@@ -301,16 +307,73 @@ function Today() {
       <div className="rounded-lg border border-[#E6E1D8] bg-white p-4">
         <h3 className="text-sm font-semibold text-stone-900 mb-3">Execution list</h3>
         <div className="space-y-2 max-h-[60vh] overflow-auto fsos-scroll">
-          {execItems.map(({ p, v }) => { const idea = ideaById(db, v.ideaId); const pub = publicationOf(db, v.id); return (
-            <div key={p.id} className="rounded-md border border-stone-200 p-2.5 flex items-center gap-2 flex-wrap" data-testid={`today-item-${v.id}`}>
-              <IPBadge ip={ipById(db, v.ipId)} /><FormatBadge format={idea.format} />
-              <button onClick={() => openIdea(idea.id)} className="flex-1 text-left text-xs text-stone-800 hover:underline truncate">{idea.title}</button>
-              {pub ? <a href={pub.url} className="text-[11px] text-blue-700 hover:underline inline-flex items-center gap-1"><Icons.ExternalLink className="h-3 w-3" />live</a> : v.reviewStatus === "ready" ? <RecordLive versionId={v.id} /> : <span className="text-[10px] text-amber-700">pending prod</span>}
+          {execItems.map(({ p, v }) => { const idea = ideaById(db, v.ideaId); const pub = publicationOf(db, v.id); const conflicts = sameDayConflict(db, p); return (
+            <div key={p.id} className="rounded-md border border-stone-200 p-2.5" data-testid={`today-item-${v.id}`}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <IPBadge ip={ipById(db, v.ipId)} /><FormatBadge format={idea.format} />
+                <button onClick={() => openIdea(idea.id)} className="flex-1 text-left text-xs text-stone-800 hover:underline truncate">{idea.title}</button>
+                {p.exceptionReason && <span className="text-[9px] rounded px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300" title={p.exceptionReason}>exception</span>}
+                {pub ? <a href={pub.url} className="text-[11px] text-blue-700 hover:underline inline-flex items-center gap-1"><Icons.ExternalLink className="h-3 w-3" />live</a> : v.reviewStatus === "ready" ? <RecordLive versionId={v.id} /> : <span className="text-[10px] text-amber-700">pending prod</span>}
+              </div>
+              {conflicts.length > 0 && (
+                <ConflictRow placement={p} conflicts={conflicts} today={today} />
+              )}
+              {!pub && v.reviewStatus === "ready" && <CollabLink versionId={v.id} date={today} />}
             </div>
           ); })}
           {!execItems.length && <Empty text="Nothing scheduled for today." />}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ConflictRow({ placement, conflicts, today }) {
+  const { db, actions, actingUser } = useDemo();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("Deliberate collaboration / major happening");
+  const canAuthorise = (db.settings.exceptionApproverIds || []).includes(actingUser.id) || actingUser.roles.includes("Founder/Admin") || actingUser.roles.includes("Short-form Lead");
+  const otherIps = conflicts.map((c) => ipById(db, c.ipId)).filter(Boolean);
+  return (
+    <div className="mt-1.5 rounded-md border border-rose-200 bg-rose-50/60 p-2" data-testid={`conflict-${placement.id}`}>
+      <div className="flex items-center gap-1.5 text-[11px] text-rose-800">
+        <Icons.AlertTriangle className="h-3.5 w-3.5" />
+        Same idea also placed today on {otherIps.map((ip) => ip.code).join(", ")} — needs an authorised exception.
+      </div>
+      {canAuthorise ? (
+        !open ? (
+          <button data-testid={`authorise-exception-${placement.id}`} onClick={() => setOpen(true)} className="mt-1 text-[11px] font-medium text-rose-700 hover:underline">Authorise exception →</button>
+        ) : (
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} className="h-7 text-xs" placeholder="Reason (recorded)" />
+            <Button size="sm" className="h-7 text-xs bg-rose-700 hover:bg-rose-800" onClick={() => { actions.authorizeException(placement.id, reason); toast.success("Exception authorised — actor & reason recorded"); setOpen(false); }}>Record</Button>
+          </div>
+        )
+      ) : <div className="mt-1 text-[10px] text-stone-400">Only authorised editorial users can approve exceptions; COC applies ordinary scheduling changes.</div>}
+    </div>
+  );
+}
+
+function CollabLink({ versionId, date }) {
+  const { db, actions } = useDemo();
+  const [open, setOpen] = useState(false);
+  const todaysPubs = db.publications.filter((p) => p.publishedAt.slice(0, 10) === date);
+  if (!todaysPubs.length) return null;
+  return (
+    <div className="mt-1.5">
+      {!open ? (
+        <button data-testid={`collab-link-${versionId}`} onClick={() => setOpen(true)} className="text-[11px] text-purple-700 hover:underline inline-flex items-center gap-1"><Icons.Link className="h-3 w-3" /> Link as collaboration (one publication, counted once)</button>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <Select onValueChange={(pubId) => { actions.linkCollaboration(pubId, versionId); toast.success("Linked as collaboration — satisfies this page's slot, counted once in network totals"); setOpen(false); }}>
+            <SelectTrigger className="h-7 text-xs w-64" data-testid={`collab-select-${versionId}`}><SelectValue placeholder="Choose today's publication to link" /></SelectTrigger>
+            <SelectContent>
+              {todaysPubs.map((p) => { const v = db.versions.find((x) => x.id === p.versionIds[0]); const idea = v && ideaById(db, v.ideaId); return <SelectItem key={p.id} value={p.id}>{p.ipIds.map((id) => ipById(db, id)?.code).join("+")} · {idea?.title.slice(0, 30)}</SelectItem>; })}
+            </SelectContent>
+          </Select>
+          <button onClick={() => setOpen(false)} className="text-stone-400 hover:text-stone-700"><Icons.X className="h-3.5 w-3.5" /></button>
+        </div>
+      )}
     </div>
   );
 }

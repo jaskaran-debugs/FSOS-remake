@@ -10,7 +10,7 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.meta && parsed.meta.version === 1) return parsed;
+      if (parsed && parsed.meta && parsed.meta.version === 2) return parsed;
     }
   } catch (e) { /* ignore */ }
   const seed = buildSeed();
@@ -272,6 +272,51 @@ export function DemoProvider({ children }) {
     unallocateVersion(versionId, reason) {
       update((d) => {
         d.placements.filter((p) => p.versionId === versionId && p.state !== "cancelled").forEach((p) => { p.state = "cancelled"; p.exceptionReason = reason || "Returned to unallocated"; p.history.push({ at: nowIso(), by: d.actingUserId, action: "Returned to bank" }); });
+        return d;
+      });
+    },
+
+    authorizeException(placementId, reason) {
+      update((d) => {
+        const p = d.placements.find((x) => x.id === placementId);
+        if (p) {
+          p.exceptionReason = reason || "Authorised exception";
+          p.exceptionBy = d.actingUserId;
+          p.exceptionAt = nowIso();
+          p.history.push({ at: nowIso(), by: d.actingUserId, action: `Authorised same-day exception: ${reason || ""}` });
+          const v = d.versions.find((x) => x.id === p.versionId);
+          if (v) logActivity(d, v.ideaId, "exception", `Same-day repetition exception authorised by ${actingUser.name}`);
+        }
+        return d;
+      });
+    },
+
+    // HPN takes a BO placement: place HPN, and reschedule OR return the BO version — never lose it
+    replaceBOWithHPN({ boVersionId, hpnVersionId, ipId, date, boAction, newDate, reason }) {
+      update((d) => {
+        // place HPN version on the slot
+        const hv = d.versions.find((x) => x.id === hpnVersionId);
+        if (hv) {
+          let hpl = d.placements.find((p) => p.versionId === hpnVersionId && p.state !== "cancelled");
+          if (hpl) { hpl.date = date; hpl.ipId = ipId; hpl.history.push({ at: nowIso(), by: d.actingUserId, action: `Moved into displaced BO slot ${date}` }); }
+          else d.placements.push({ id: uid("pl"), versionId: hpnVersionId, ipId, date, time: null, order: 1, state: "pending", history: [{ at: nowIso(), by: d.actingUserId, action: "Placed (HPN displacement)" }], exceptionReason: null });
+          logActivity(d, hv.ideaId, "placed", `HPN placed into BO slot on ${date}`);
+        }
+        // handle displaced BO version
+        const bpl = d.placements.find((p) => p.versionId === boVersionId && p.state !== "cancelled");
+        const bv = d.versions.find((x) => x.id === boVersionId);
+        if (bpl) {
+          if (boAction === "reschedule" && newDate) {
+            bpl.history.push({ at: nowIso(), by: d.actingUserId, action: `Displaced by HPN: rescheduled ${bpl.date} → ${newDate}` });
+            bpl.date = newDate;
+            if (bv) logActivity(d, bv.ideaId, "displaced", `Displaced by HPN — rescheduled to ${newDate}`);
+          } else {
+            bpl.state = "cancelled";
+            bpl.exceptionReason = reason || "Displaced by HPN — returned to unallocated bank";
+            bpl.history.push({ at: nowIso(), by: d.actingUserId, action: "Displaced by HPN → returned to bank (age & approval intact)" });
+            if (bv) logActivity(d, bv.ideaId, "displaced", `Displaced by HPN — returned to unallocated bank`);
+          }
+        }
         return d;
       });
     },

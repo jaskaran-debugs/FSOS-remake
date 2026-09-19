@@ -70,6 +70,34 @@ const BO_TITLES = [
   ["Glow-edit A-roll: building in public actually works", "A-roll clip"],
   ["The founder's guide to reading a term sheet without a lawyer", "case study"],
   ["Why niche beats scale for India's first-time founders", "statement"],
+  ["How Lenskart turned eyewear into a tech-retail machine", "case study"],
+  ["The real reason your CAC keeps climbing every quarter", "fact static"],
+  ["What Meesho understood about Bharat that others missed", "proven BO"],
+  ["Founders: stop confusing revenue with traction", "statement"],
+  ["The quiet power of a boring, repeatable sales motion", "proven BO"],
+  ["How Nykaa built trust before it built scale", "case study"],
+  ["Three balance-sheet lines investors read first", "fact static"],
+  ["Why your second product usually kills your focus", "statement"],
+  ["The bootstrapped SaaS that beat a funded rival", "proven BO"],
+  ["Decoding Groww's flywheel in one carousel", "case study"],
+  ["The hiring mistake that quietly caps most startups", "fact static"],
+  ["What Dukaan learnt from cutting 90% of its staff", "case study"],
+  ["Retention is the only growth metric that compounds", "statement"],
+  ["How Wakefit made sleep a category worth ₹1,000 Cr", "case study"],
+  ["The pricing psychology behind India's subscription boom", "fact static"],
+  ["Why most 'category creation' pitches are a trap", "statement"],
+  ["The margin story hiding inside quick-commerce", "fact static"],
+  ["How Zepto compressed a decade of logistics into months", "case study"],
+  ["The underrated moat of obsessive customer support", "proven BO"],
+  ["A-roll: the founder habit that separates 10x from 1x", "A-roll clip"],
+  ["Why distribution beats product more often than we admit", "statement"],
+  ["How Sleepy Owl turned coffee into a D2C playbook", "case study"],
+  ["The cash-conversion cycle nobody teaches founders", "fact static"],
+  ["What Rapido proves about winning tier-2 India first", "proven BO"],
+  ["The one slide that makes or breaks a seed pitch", "fact static"],
+  ["Glow-edit A-roll: build the audience before the product", "A-roll clip"],
+  ["Why founder-led sales should never fully stop", "statement"],
+  ["How boAt out-marketed brands ten times its size", "case study"],
 ];
 
 const HPN_TITLES = [
@@ -83,6 +111,19 @@ const HPN_TITLES = [
   ["Why the whole timeline is arguing about this pricing change", "happening"],
   ["Budget reaction: what changed for early-stage startups", "news roundup"],
   ["Massive: a unicorn just cut its valuation in half overnight", "massive happening"],
+  ["Just in: a major SaaS player enters the Indian market", "news roundup"],
+  ["The founder apology thread everyone is dissecting today", "happening"],
+  ["Breaking: new data-protection rules land for startups", "news roundup"],
+  ["A ₹500 Cr fund just announced its India thesis", "happening"],
+  ["Why this week's funding winter chatter is trending again", "happening"],
+  ["Live: the keynote line that set the ecosystem buzzing", "massive happening"],
+  ["That surprise CEO exit, explained in 60 seconds", "happening"],
+  ["New GST clarification founders were waiting for", "news roundup"],
+  ["The acquisition rumour that moved three stocks today", "happening"],
+  ["Reaction: the policy tweak that changes D2C economics", "news roundup"],
+  ["A viral product recall just became a case study overnight", "happening"],
+  ["Breaking: two rivals announce a shock merger", "massive happening"],
+  ["The hiring freeze memo that leaked this morning", "happening"],
 ];
 
 const HOOKS = [
@@ -241,7 +282,7 @@ export function buildSeed() {
   // Batch 1: fully ready future stock (bank)
   const batch1 = { id: uid("batch"), name: "BO Batch — Founder Playbooks", stream: "BO", deadline: addDays(anchor, 2), reviewerId: founder.id, ideaIds: [] };
   batches.push(batch1);
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 12; i++) {
     const [title, cat] = takeTitle(boPool);
     const format = chance(0.5) ? "Carousel" : chance(0.5) ? "Reel" : "Static";
     const idea = newIdea("BO", title, cat, format, {
@@ -263,7 +304,7 @@ export function buildSeed() {
   batches.push(batch2);
   const reviewerForB2 = csList[1] || founder;
   batch2.reviewerId = reviewerForB2.id;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 9; i++) {
     const [title, cat] = takeTitle(boPool);
     const format = chance(0.5) ? "Carousel" : "Reel";
     const idea = newIdea("BO", title, cat, format, {
@@ -292,7 +333,7 @@ export function buildSeed() {
   // Batch 3: approved but unassigned (needs COA assignment)
   const batch3 = { id: uid("batch"), name: "BO Batch — Contrarian Takes", stream: "BO", deadline: addDays(anchor, 3), reviewerId: csList[0].id, ideaIds: [] };
   batches.push(batch3);
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 6; i++) {
     const [title, cat] = takeTitle(boPool);
     const idea = newIdea("BO", title, cat, chance(0.5) ? "Carousel" : "Reel", {
       destCount: 2 + Math.floor(rand() * 3),
@@ -306,10 +347,30 @@ export function buildSeed() {
     logActivity(idea.id, "approved", `Idea approved by ${founder.name}`, founder.id, idea.approval.at);
   }
 
+  // Batch 5: large-destination ready stock (demonstrates 6-destination volume)
+  const batch5 = { id: uid("batch"), name: "BO Batch — Network Wide Bank", stream: "BO", deadline: addDays(anchor, 4), reviewerId: founder.id, ideaIds: [] };
+  batches.push(batch5);
+  for (let i = 0; i < 8; i++) {
+    const [title, cat] = takeTitle(boPool);
+    const format = chance(0.5) ? "Carousel" : chance(0.5) ? "Reel" : "Static";
+    const idea = newIdea("BO", title, cat, format, {
+      destCount: i < 3 ? 6 : 3 + Math.floor(rand() * 3),
+      approval: { state: "approved", by: founder.id, at: addDays(anchor, -3) + "T05:00:00.000Z" },
+      productionOwnerId: pick(producers).id,
+      reviewerId: founder.id,
+      batchId: batch5.id,
+      deadline: batch5.deadline,
+      createdAt: addDays(anchor, -5) + "T04:00:00.000Z",
+    });
+    batch5.ideaIds.push(idea.id);
+    makeVersions(idea, (idx) => (idx < 4 ? "ready" : chance(0.5) ? "ready" : "in_production"));
+    logActivity(idea.id, "approved", `Idea approved by ${founder.name}`, founder.id, idea.approval.at);
+  }
+
   // Draft / awaiting approval BO ideas (not yet approved)
   const batch4 = { id: uid("batch"), name: "BO Batch — Draft Intake", stream: "BO", deadline: addDays(anchor, 5), reviewerId: null, ideaIds: [] };
   batches.push(batch4);
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const [title, cat] = takeTitle(boPool);
     const idea = newIdea("BO", title, cat, "Carousel", {
       destCount: 3 + Math.floor(rand() * 3),
@@ -341,8 +402,8 @@ export function buildSeed() {
     makeVersions(idea, (idx) => (idx === 0 ? "awaiting_review" : "in_production"));
     logActivity(idea.id, "bypass", `${coa.name} started production without prior idea approval (authorised HPN bypass)`, coa.id, idea.bypassUsed.at);
   }
-  // A couple of ready HPN
-  for (let i = 0; i < 2; i++) {
+  // A few ready HPN
+  for (let i = 0; i < 4; i++) {
     const [title, cat] = hpnPool.shift();
     const idea = newIdea("HPN", title, cat, chance(0.5) ? "Reel" : "Static", {
       destCount: 1 + Math.floor(rand() * 2),
@@ -354,6 +415,19 @@ export function buildSeed() {
     makeVersions(idea, () => "ready");
     logActivity(idea.id, "approved", `Idea approved by ${shortLead.name}`, shortLead.id, idea.approval.at);
   }
+  // A few HPN in production / awaiting review
+  for (let i = 0; i < 4; i++) {
+    const [title, cat] = hpnPool.shift();
+    const idea = newIdea("HPN", title, cat, "Reel", {
+      destCount: 1 + Math.floor(rand() * 2),
+      approval: { state: "approved", by: shortLead.id, at: addDays(anchor, 0) + "T04:30:00.000Z" },
+      productionOwnerId: pick(editors).id,
+      reviewerId: shortLead.id,
+      createdAt: addDays(anchor, 0) + "T03:30:00.000Z",
+    });
+    makeVersions(idea, (idx) => (idx === 0 ? "awaiting_review" : "in_production"));
+    logActivity(idea.id, "approved", `Idea approved by ${shortLead.name}`, shortLead.id, idea.approval.at);
+  }
 
   // ---- HISTORICAL published ideas across last 30 days (for cycles + performance) ----
   // Reuse BO + HPN titles; these are fully published with snapshots.
@@ -361,7 +435,7 @@ export function buildSeed() {
   const cycleAnchor = addDays(anchor, -30);
   for (let day = 30; day >= 1; day--) {
     const date = addDays(anchor, -day);
-    const perDay = 1 + Math.floor(rand() * 2); // 1-2 published ideas per day
+    const perDay = 2 + Math.floor(rand() * 2); // 2-3 published ideas per day
     for (let k = 0; k < perDay; k++) {
       const [title, cat] = pick(histTitles);
       const stream = ["news roundup", "happening", "massive happening"].includes(cat) ? "HPN" : "BO";
@@ -445,6 +519,40 @@ export function buildSeed() {
 
   // Capture tasks: derive from publications w/o complete snapshot. Add a few overdue ones by using recent publications lacking snapshot values (already have some null).
 
+  // ---- Demonstrate exception + collaboration paths on TODAY ----
+  // 1) Intentional same-day repetition (unauthorised) on today across two IPs of one ready BO idea.
+  const repIdea = ideas.find((i) => i.stream === "BO" && versions.filter((v) => v.ideaId === i.id && v.reviewStatus === "ready").length >= 2);
+  if (repIdea) {
+    const rv = versions.filter((v) => v.ideaId === repIdea.id && v.reviewStatus === "ready").slice(0, 2);
+    rv.forEach((v) => {
+      placements.filter((p) => p.versionId === v.id && p.state !== "cancelled").forEach((p) => (p.state = "cancelled"));
+      placements.push({ id: uid("pl"), versionId: v.id, ipId: v.ipId, date: anchor, time: null, order: 1, state: "pending", history: [], exceptionReason: null });
+    });
+    logActivity(repIdea.id, "placed", "Placed on two IPs today — awaiting authorised exception", coc.id, nowIso());
+  }
+  // 2) One HPN publication today so collaboration linkage has a target and Today shows a live item.
+  const hpnReadyToday = versions.find((v) => { const idea = ideas.find((i) => i.id === v.ideaId); return idea && idea.stream === "HPN" && v.reviewStatus === "ready" && !publications.some((p) => p.versionIds.includes(v.id)); });
+  if (hpnReadyToday) {
+    const publishedAt = anchor + "T08:20:00.000Z";
+    const pl = { id: uid("pl"), versionId: hpnReadyToday.id, ipId: hpnReadyToday.ipId, date: anchor, time: "08:20", order: 1, state: "confirmed", history: [], exceptionReason: null };
+    placements.push(pl);
+    const pub = { id: uid("pub"), versionIds: [hpnReadyToday.id], ipIds: [hpnReadyToday.ipId], url: "https://instagram.com/reel/today-demo", publishedAt, placementIds: [pl.id], isCollab: false };
+    publications.push(pub);
+    const dueAt = new Date(new Date(publishedAt).getTime() + 24 * 3600000).toISOString();
+    snapshots.push({ id: uid("snap"), publicationId: pub.id, views: null, measuredAt: null, ageHours: null, recordedBy: null, dueAt });
+  }
+  // 3) Also place a couple of ready versions on today so the execution list is populated.
+  readyBankVersions.slice(0, 4).forEach((v, k) => {
+    if (placements.some((p) => p.versionId === v.id && p.state !== "cancelled" && p.date === anchor)) return;
+    const idea = ideas.find((i) => i.id === v.ideaId);
+    // avoid creating another same-idea today conflict
+    if (repIdea && idea && idea.id === repIdea.id) return;
+    const conflictToday = placements.some((p) => p.state !== "cancelled" && p.date === anchor && versions.find((vv) => vv.id === p.versionId)?.ideaId === idea?.id);
+    if (conflictToday) return;
+    placements.filter((p) => p.versionId === v.id && p.state !== "cancelled").forEach((p) => (p.state = "cancelled"));
+    placements.push({ id: uid("pl"), versionId: v.id, ipId: v.ipId, date: anchor, time: null, order: 1, state: "pending", history: [], exceptionReason: null });
+  });
+
   const settings = {
     thresholds: { good: 100, average: 50 },
     baselineSample: 5,
@@ -457,7 +565,7 @@ export function buildSeed() {
   };
 
   return {
-    meta: { anchor, seededAt: nowIso(), version: 1 },
+    meta: { anchor, seededAt: nowIso(), version: 2 },
     settings,
     ips,
     users,
