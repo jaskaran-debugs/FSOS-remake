@@ -1,0 +1,335 @@
+import React, { useState, useMemo } from "react";
+import * as Icons from "lucide-react";
+import { useDemo } from "../domain/store";
+import { useUI } from "../components/idea/IdeaModalProvider";
+import { PageHeader } from "../components/common/PageHeader";
+import { StreamBadge, StatusBadge, FormatBadge, IPBadge, VersionBadge, PerfBadge } from "../components/common/badges";
+import { versionsOf, ideaById, ipById, userById, activePlacementOf, publicationOf, snapshotOf, readyBankVersions, bankSummary, targetFor, classify } from "../domain/selectors";
+import { formatCounts } from "../domain/constants";
+import { fmtDate, weekdayShort, addDays, nowIso, istTimeStr } from "../domain/dates";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Checkbox } from "../components/ui/checkbox";
+import { toast } from "sonner";
+import { cn } from "../lib/utils";
+import BulkPlacement from "../components/distribution/BulkPlacement";
+
+const TABS = [["bank", "Bank"], ["calendar", "Calendar"], ["matrix", "Idea Matrix"], ["today", "Today"]];
+
+export default function Distribution() {
+  const [tab, setTab] = useState("matrix");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  return (
+    <div className="p-6">
+      <PageHeader title="Distribution" icon={Icons.CalendarDays} subtitle="COC-controlled planning — visibility, manual & bulk placement, counts and conflict checks. FSOS never auto-allocates.">
+        <Button variant="outline" size="sm" data-testid="open-bulk-btn" onClick={() => setBulkOpen(true)}><Icons.LayoutGrid className="h-4 w-4 mr-1" /> Bulk placement</Button>
+      </PageHeader>
+      <div className="inline-flex rounded-md border border-stone-200 bg-stone-50 p-0.5 mb-4">
+        {TABS.map(([v, l]) => <button key={v} data-testid={`dist-tab-${v}`} onClick={() => setTab(v)} className={cn("px-3 py-1.5 text-xs font-medium rounded transition-colors", tab === v ? "bg-white shadow-sm text-stone-900" : "text-stone-500 hover:text-stone-800")}>{l}</button>)}
+      </div>
+      {tab === "bank" && <Bank />}
+      {tab === "calendar" && <NetworkCalendar />}
+      {tab === "matrix" && <IdeaMatrix />}
+      {tab === "today" && <Today />}
+      <BulkPlacement open={bulkOpen} onOpenChange={setBulkOpen} />
+    </div>
+  );
+}
+
+/* ---------------- BANK ---------------- */
+function Bank() {
+  const { db } = useDemo();
+  const { openIdea } = useUI();
+  const [ipf, setIpf] = useState("all");
+  const [fmt, setFmt] = useState("all");
+  const [alloc, setAlloc] = useState("all");
+  const sum = bankSummary(db);
+  let ready = sum.ready;
+  ready = ready.filter((v) => {
+    const idea = ideaById(db, v.ideaId);
+    if (ipf !== "all" && v.ipId !== ipf) return false;
+    if (fmt !== "all" && (fmt === "Reel" ? idea.format !== "Reel" : idea.format === "Reel")) return false;
+    const placed = !!activePlacementOf(db, v.id);
+    if (alloc === "allocated" && !placed) return false;
+    if (alloc === "unallocated" && placed) return false;
+    return true;
+  });
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <Stat label="Ready versions" value={sum.readyCount} />
+        <Stat label="Parent ideas" value={sum.ideaCount} note="ideas ≠ assets" />
+        <Stat label="Unallocated" value={sum.unallocatedCount} />
+        <Stat label="Ready Reels" value={sum.byFormat.Reel} />
+        <Stat label="Ready Posts" value={sum.byFormat.Post} />
+      </div>
+      <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-2.5 mb-3 text-[11px] text-amber-800 flex items-center gap-2">
+        <Icons.Info className="h-3.5 w-3.5" /> BO quotas per IP are unconfigured, so "days of coverage" is Not configured — no fabricated health score. Ten days is a stock target, not an expiry.
+      </div>
+      <div className="flex gap-2 mb-3">
+        <FSel value={ipf} onChange={setIpf} options={[["all", "All IPs"], ...db.ips.map((i) => [i.id, i.code])]} />
+        <FSel value={fmt} onChange={setFmt} options={[["all", "All formats"], ["Reel", "Reels"], ["Post", "Posts"]]} />
+        <FSel value={alloc} onChange={setAlloc} options={[["all", "All"], ["allocated", "Allocated"], ["unallocated", "Unallocated"]]} />
+      </div>
+      <div className="space-y-2">
+        {ready.map((v) => {
+          const idea = ideaById(db, v.ideaId);
+          const pl = activePlacementOf(db, v.id);
+          const ageDays = Math.max(0, -1 * (new Date(idea.approval.at || idea.createdAt) - new Date()) / 86400000 * -1);
+          return (
+            <div key={v.id} className="rounded-lg border border-[#E6E1D8] bg-white p-3 flex items-center gap-3" data-testid={`bank-row-${v.id}`}>
+              <IPBadge ip={ipById(db, v.ipId)} />
+              <FormatBadge format={idea.format} />
+              <button onClick={() => openIdea(idea.id)} className="flex-1 text-left text-sm text-stone-800 hover:underline truncate">{idea.title}</button>
+              <span className="text-[11px] text-stone-400">age {Math.round((Date.now() - new Date(idea.approval.at || idea.createdAt)) / 86400000)}d</span>
+              {pl ? <span className="text-[11px] text-emerald-700 inline-flex items-center gap-1"><Icons.CalendarCheck className="h-3.5 w-3.5" />{fmtDate(pl.date)}</span> : <span className="text-[11px] text-amber-700 inline-flex items-center gap-1"><Icons.CircleDashed className="h-3.5 w-3.5" />unallocated</span>}
+            </div>
+          );
+        })}
+        {!ready.length && <Empty text="No ready stock matches these filters." />}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- IDEA MATRIX ---------------- */
+function IdeaMatrix() {
+  const { db } = useDemo();
+  const { openIdea } = useUI();
+  const [panel, setPanel] = useState(null); // versionId
+  const [batchF, setBatchF] = useState("all");
+  const [onlyUnalloc, setOnlyUnalloc] = useState(false);
+  const ideas = db.ideas.filter((i) => i.destinations.length && (batchF === "all" || i.batchId === batchF));
+
+  return (
+    <div className="flex gap-4">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-3">
+          <FSel value={batchF} onChange={setBatchF} options={[["all", "All batches"], ...db.batches.map((b) => [b.id, b.name])]} />
+          <label className="flex items-center gap-1.5 text-xs text-stone-600"><Checkbox checked={onlyUnalloc} onCheckedChange={setOnlyUnalloc} data-testid="matrix-unalloc" /> Unallocated versions only</label>
+          <div className="ml-auto flex items-center gap-3 text-[10px] text-stone-400">
+            <Legend color="bg-stone-300" label="intended, not ready" /><Legend color="bg-emerald-500" label="ready" /><Legend color="bg-blue-600" label="planned" /><Legend color="bg-stone-800" label="published" />
+          </div>
+        </div>
+        <div className="overflow-auto fsos-scroll rounded-lg border border-[#E6E1D8] bg-white max-h-[70vh]">
+          <table className="text-xs border-collapse" data-testid="idea-matrix">
+            <thead className="sticky top-0 z-20">
+              <tr>
+                <th className="sticky left-0 z-30 bg-[#F5F2EC] border-b border-r border-stone-200 px-3 py-2 text-left font-medium text-stone-500 min-w-[240px]">Idea</th>
+                {db.ips.map((ip) => (
+                  <th key={ip.id} className="bg-[#F5F2EC] border-b border-stone-200 px-2 py-2 min-w-[64px]">
+                    <div className="flex flex-col items-center gap-1"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: ip.hex }} /><span className="font-mono text-[10px] text-stone-600">{ip.code}</span></div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ideas.map((idea) => (
+                <tr key={idea.id} className="hover:bg-stone-50/50">
+                  <td className="sticky left-0 z-10 bg-white border-b border-r border-stone-100 px-3 py-2 min-w-[240px]">
+                    <button onClick={() => openIdea(idea.id)} className="text-left w-full">
+                      <div className="flex items-center gap-1.5 mb-0.5"><StreamBadge stream={idea.stream} /><FormatBadge format={idea.format} /></div>
+                      <div className="text-[11px] text-stone-800 truncate max-w-[220px]">{idea.title}</div>
+                    </button>
+                  </td>
+                  {db.ips.map((ip) => {
+                    const v = versionsOf(db, idea.id).find((x) => x.ipId === ip.id);
+                    if (!v) return <td key={ip.id} className="border-b border-stone-100 text-center text-stone-200">·</td>;
+                    const pub = publicationOf(db, v.id);
+                    const pl = activePlacementOf(db, v.id);
+                    if (onlyUnalloc && (pub || pl)) return <td key={ip.id} className="border-b border-stone-100 text-center text-stone-200">·</td>;
+                    return (
+                      <td key={ip.id} className="border-b border-stone-100 p-1 text-center">
+                        <button data-testid={`matrix-cell-${v.id}`} onClick={() => setPanel(v.id)} className="mx-auto flex h-8 w-full max-w-[56px] items-center justify-center rounded-md border transition-colors hover:ring-2 hover:ring-stone-300"
+                          style={{ background: pub ? "#1c1917" : pl ? "#2563eb" : v.reviewStatus === "ready" ? "#10b981" : "#d6d3d1", borderColor: "transparent" }}>
+                          {pub ? <Icons.Check className="h-4 w-4 text-white" /> : pl ? <span className="text-[9px] font-medium text-white">{fmtDate(pl.date).split(" ")[0]}</span> : v.reviewStatus === "ready" ? <Icons.Box className="h-3.5 w-3.5 text-white" /> : <span className="text-[8px] text-stone-500">···</span>}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {panel && <CellPanel versionId={panel} onClose={() => setPanel(null)} />}
+    </div>
+  );
+}
+
+function CellPanel({ versionId, onClose }) {
+  const { db, actions, actingUser } = useDemo();
+  const { openIdea } = useUI();
+  const v = db.versions.find((x) => x.id === versionId);
+  const idea = ideaById(db, v.ideaId);
+  const ip = ipById(db, v.ipId);
+  const pl = activePlacementOf(db, v.id);
+  const pub = publicationOf(db, v.id);
+  const snap = pub && snapshotOf(db, pub.id);
+  const feedback = db.comments.filter((c) => c.versionId === v.id);
+  const t = targetFor(db, v.ipId, idea.format);
+  return (
+    <div className="w-80 shrink-0 rounded-lg border border-[#E6E1D8] bg-[#FAF8F5] p-4 max-h-[70vh] overflow-auto fsos-scroll" data-testid="matrix-side-panel">
+      <div className="flex items-center justify-between mb-3">
+        <IPBadge ip={ip} showName />
+        <button onClick={onClose} className="text-stone-400 hover:text-stone-700"><Icons.X className="h-4 w-4" /></button>
+      </div>
+      <button onClick={() => openIdea(idea.id)} className="text-left font-medium text-stone-900 hover:underline text-sm">{idea.title}</button>
+      <div className="mt-2 flex items-center gap-2">{pub ? <StatusBadge state="published" /> : <VersionBadge status={v.reviewStatus} />}<FormatBadge format={idea.format} /></div>
+      <Field label="Hook variation" value={v.hookOverride || idea.brief.sharedHook} />
+      <Field label="Assets">{v.assetLinks.length ? v.assetLinks.map((l) => <a key={l.id} href={l.url} className="block text-[11px] text-blue-700 hover:underline">{l.type}: {l.label}</a>) : <span className="text-[11px] text-stone-400">none</span>}</Field>
+      <Field label="Reviewer feedback">{feedback.length ? feedback.map((c) => <p key={c.id} className="text-[11px] text-stone-600">· {c.text}</p>) : <span className="text-[11px] text-stone-400">no feedback</span>}</Field>
+      <Field label="Placement">{pl ? <span className="text-[11px] text-stone-700">{fmtDate(pl.date)} {pl.time ? `· ${pl.time} IST` : "(untimed)"} · {pl.state}</span> : <span className="text-[11px] text-amber-700">unallocated</span>}</Field>
+      {pub && <Field label="Live link"><a href={pub.url} className="text-[11px] text-blue-700 hover:underline">{pub.url.slice(0, 40)}</a></Field>}
+      {snap && <Field label="Measured views">{snap.views == null ? <span className="text-[11px] text-stone-400">not captured</span> : <span className="text-sm font-semibold">{snap.views.toLocaleString()} <span className="text-[10px] text-stone-400">/ {t?.toLocaleString()}</span> {snap.ageHours !== 24 && <span className="text-[10px] text-amber-600">@{snap.ageHours}h</span>}</span>}</Field>}
+    </div>
+  );
+}
+
+function Field({ label, value, children }) {
+  return <div className="mt-3"><div className="text-[10px] uppercase tracking-wide text-stone-400 mb-0.5">{label}</div>{value ? <p className="text-[11px] text-stone-700">{value}</p> : children}</div>;
+}
+
+/* ---------------- NETWORK CALENDAR ---------------- */
+function NetworkCalendar() {
+  const { db, actions, today } = useDemo();
+  const [start, setStart] = useState(today);
+  const [sel, setSel] = useState(null); // {ipId, date}
+  const days = Array.from({ length: 10 }, (_, i) => addDays(start, i));
+
+  return (
+    <div className="flex gap-4">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-3">
+          <Button size="sm" variant="outline" className="h-8" onClick={() => setStart(addDays(start, -10))}><Icons.ChevronLeft className="h-4 w-4" /></Button>
+          <span className="text-xs text-stone-500">{fmtDate(days[0])} – {fmtDate(days[9])}</span>
+          <Button size="sm" variant="outline" className="h-8" onClick={() => setStart(addDays(start, 10))}><Icons.ChevronRight className="h-4 w-4" /></Button>
+          <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setStart(today)}>Today</Button>
+          <span className="ml-auto text-[10px] text-stone-400">Rolling 10-day network view · IST</span>
+        </div>
+        <div className="overflow-auto fsos-scroll rounded-lg border border-[#E6E1D8] bg-white max-h-[68vh]">
+          <table className="text-xs border-collapse" data-testid="network-calendar">
+            <thead className="sticky top-0 z-20">
+              <tr>
+                <th className="sticky left-0 z-30 bg-[#F5F2EC] border-b border-r border-stone-200 px-3 py-2 text-left min-w-[120px]">IP</th>
+                {days.map((d) => <th key={d} className={cn("bg-[#F5F2EC] border-b border-stone-200 px-2 py-2 min-w-[92px]", d === today && "bg-blue-50")}><div className="text-[10px] text-stone-500">{weekdayShort(d)}</div><div className="font-mono text-[11px] text-stone-700">{fmtDate(d)}</div></th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {db.ips.map((ip) => (
+                <tr key={ip.id}>
+                  <td className={cn("sticky left-0 z-10 border-b border-r border-stone-100 px-3 py-2 min-w-[120px]", ip.active ? "bg-white" : "bg-stone-50")}><IPBadge ip={ip} />{!ip.active && <span className="ml-1 text-[9px] text-amber-700">paused</span>}</td>
+                  {days.map((d) => {
+                    const pls = db.placements.filter((p) => p.ipId === ip.id && p.date === d && p.state !== "cancelled");
+                    let planP = 0, planR = 0, conf = 0, ready = 0;
+                    pls.forEach((p) => { const v = db.versions.find((x) => x.id === p.versionId); if (!v) return; const idea = ideaById(db, v.ideaId); const fc = formatCounts(idea.format); planP += fc.posts; planR += fc.reels; if (publicationOf(db, v.id)) conf++; else if (v.reviewStatus === "ready") ready++; });
+                    const reservedR = Math.max(0, ip.floors.reels - planR);
+                    const isSel = sel && sel.ipId === ip.id && sel.date === d;
+                    return (
+                      <td key={d} onClick={() => setSel({ ipId: ip.id, date: d })} data-testid={`cal-cell-${ip.id}-${d}`}
+                        className={cn("border-b border-stone-100 p-1 align-top cursor-pointer hover:bg-blue-50/40", isSel && "ring-2 ring-blue-400 bg-blue-50/60")}>
+                        <div className="flex items-center justify-between text-[9px] text-stone-400"><span>{planP}P/{planR}R</span><span className="text-stone-300">/ {ip.floors.posts}·{ip.floors.reels}</span></div>
+                        <div className="space-y-0.5 mt-0.5">
+                          {pls.slice(0, 3).map((p) => { const v = db.versions.find((x) => x.id === p.versionId); const idea = ideaById(db, v?.ideaId); const isPub = publicationOf(db, v?.id); return (
+                            <div key={p.id} className={cn("rounded px-1 py-0.5 text-[9px] truncate", isPub ? "bg-stone-800 text-white" : v?.reviewStatus === "ready" ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800")} title={idea?.title}>{idea?.title}</div>
+                          ); })}
+                          {pls.length > 3 && <div className="text-[9px] text-stone-400">+{pls.length - 3} more</div>}
+                          {reservedR > 0 && <div className="text-[9px] text-amber-600">{reservedR}R HPN reserve</div>}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {sel && <BankDrawer sel={sel} onClose={() => setSel(null)} />}
+    </div>
+  );
+}
+
+function BankDrawer({ sel, onClose }) {
+  const { db, actions } = useDemo();
+  const ip = ipById(db, sel.ipId);
+  const eligible = readyBankVersions(db).filter((v) => v.ipId === sel.ipId && !activePlacementOf(db, v.id));
+  const alsoUnready = db.versions.filter((v) => v.ipId === sel.ipId && v.reviewStatus !== "ready" && !publicationOf(db, v.id) && !activePlacementOf(db, v.id)).slice(0, 4);
+  return (
+    <div className="w-72 shrink-0 rounded-lg border border-[#E6E1D8] bg-[#FAF8F5] p-3 max-h-[68vh] overflow-auto fsos-scroll" data-testid="bank-drawer">
+      <div className="flex items-center justify-between mb-2"><div className="text-xs font-medium text-stone-700 flex items-center gap-1.5"><IPBadge ip={ip} /> {fmtDate(sel.date)}</div><button onClick={onClose} className="text-stone-400 hover:text-stone-700"><Icons.X className="h-4 w-4" /></button></div>
+      <p className="text-[10px] text-stone-400 mb-2">Eligible ready versions for this IP. Click to place. Calendar can also hold versions still in production, shown pending.</p>
+      {eligible.map((v) => { const idea = ideaById(db, v.ideaId); return (
+        <button key={v.id} data-testid={`drawer-place-${v.id}`} onClick={() => { const c = actions.placeVersion(v.id, sel.date); if (c === "same_day_repetition") toast.warning("Repetition conflict — needs authorised exception"); else toast.success("Placed"); }} className="w-full text-left rounded-md border border-stone-200 bg-white p-2 mb-1.5 hover:border-blue-400 transition-colors">
+          <div className="flex items-center gap-1.5 mb-0.5"><FormatBadge format={idea.format} /><span className="text-[10px] text-emerald-700">ready</span></div>
+          <div className="text-[11px] text-stone-800 truncate">{idea.title}</div>
+        </button>
+      ); })}
+      {!eligible.length && <p className="text-[11px] text-stone-400">No unallocated ready stock for this IP.</p>}
+      {alsoUnready.length > 0 && <><div className="mt-2 text-[10px] uppercase tracking-wide text-stone-400">In production (pending)</div>{alsoUnready.map((v) => { const idea = ideaById(db, v.ideaId); return <div key={v.id} className="rounded-md border border-dashed border-stone-200 p-2 mt-1 text-[11px] text-stone-500 truncate">{idea.title}</div>; })}</>}
+    </div>
+  );
+}
+
+/* ---------------- TODAY ---------------- */
+function Today() {
+  const { db, actions, today } = useDemo();
+  const { openIdea } = useUI();
+  const rows = db.ips.map((ip) => {
+    const pls = db.placements.filter((p) => p.ipId === ip.id && p.date === today && p.state !== "cancelled");
+    let planP = 0, planR = 0, readyP = 0, readyR = 0, confP = 0, confR = 0;
+    pls.forEach((p) => { const v = db.versions.find((x) => x.id === p.versionId); if (!v) return; const idea = ideaById(db, v.ideaId); const fc = formatCounts(idea.format); planP += fc.posts; planR += fc.reels; if (publicationOf(db, v.id)) { confP += fc.posts; confR += fc.reels; } else if (v.reviewStatus === "ready") { readyP += fc.posts; readyR += fc.reels; } });
+    return { ip, pls, planP, planR, readyP, readyR, confP, confR };
+  });
+  const execItems = db.placements.filter((p) => p.date === today && p.state !== "cancelled").map((p) => ({ p, v: db.versions.find((x) => x.id === p.versionId) })).filter((x) => x.v);
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="rounded-lg border border-[#E6E1D8] bg-white p-4">
+        <h3 className="text-sm font-semibold text-stone-900 mb-3">Required vs planned vs ready vs published — {fmtDate(today)}</h3>
+        <table className="w-full text-xs" data-testid="today-table">
+          <thead><tr className="text-stone-400 border-b border-stone-200"><th className="text-left py-1.5">IP</th><th className="text-center">Req</th><th className="text-center">Planned</th><th className="text-center">Ready</th><th className="text-center">Published</th></tr></thead>
+          <tbody>{rows.map((r) => { const shortP = r.confP < r.ip.floors.posts, shortR = r.confR < r.ip.floors.reels; return (
+            <tr key={r.ip.id} className="border-b border-stone-100"><td className="py-1.5"><IPBadge ip={r.ip} /></td><td className="text-center text-stone-500">{r.ip.floors.posts}P·{r.ip.floors.reels}R</td><td className="text-center">{r.planP}P·{r.planR}R</td><td className="text-center text-emerald-700">{r.readyP}P·{r.readyR}R</td><td className="text-center"><span className={cn(shortP && "text-amber-700")}>{r.confP}P</span>·<span className={cn(shortR && "text-amber-700")}>{r.confR}R</span></td></tr>
+          ); })}</tbody>
+        </table>
+        <p className="mt-2 text-[10px] text-stone-400">Per-format floor flags: surplus reels don't cover missing Posts. During the day we show remaining, not a failed label.</p>
+      </div>
+      <div className="rounded-lg border border-[#E6E1D8] bg-white p-4">
+        <h3 className="text-sm font-semibold text-stone-900 mb-3">Execution list</h3>
+        <div className="space-y-2 max-h-[60vh] overflow-auto fsos-scroll">
+          {execItems.map(({ p, v }) => { const idea = ideaById(db, v.ideaId); const pub = publicationOf(db, v.id); return (
+            <div key={p.id} className="rounded-md border border-stone-200 p-2.5 flex items-center gap-2 flex-wrap" data-testid={`today-item-${v.id}`}>
+              <IPBadge ip={ipById(db, v.ipId)} /><FormatBadge format={idea.format} />
+              <button onClick={() => openIdea(idea.id)} className="flex-1 text-left text-xs text-stone-800 hover:underline truncate">{idea.title}</button>
+              {pub ? <a href={pub.url} className="text-[11px] text-blue-700 hover:underline inline-flex items-center gap-1"><Icons.ExternalLink className="h-3 w-3" />live</a> : v.reviewStatus === "ready" ? <RecordLive versionId={v.id} /> : <span className="text-[10px] text-amber-700">pending prod</span>}
+            </div>
+          ); })}
+          {!execItems.length && <Empty text="Nothing scheduled for today." />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecordLive({ versionId }) {
+  const { actions } = useDemo();
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  if (!open) return <Button size="sm" variant="outline" className="h-7 text-xs" data-testid={`record-live-${versionId}`} onClick={() => setOpen(true)}><Icons.Upload className="h-3 w-3 mr-1" /> Record live</Button>;
+  return (
+    <div className="flex items-center gap-1.5">
+      <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="live URL" className="h-7 w-40 text-xs" />
+      <Button size="sm" className="h-7 text-xs" onClick={() => { if (!url) { actions.reportLivePending(versionId); toast("Reported live — link pending (not counted as confirmed)"); } else { const r = actions.confirmPublication(versionId, url, nowIso()); if (r.dupUrl) toast.warning("URL already used — link as collaboration instead"); else toast.success("Publication confirmed"); } setOpen(false); }}>Save</Button>
+    </div>
+  );
+}
+
+/* ---- small ---- */
+function Stat({ label, value, note }) { return <div className="rounded-lg border border-[#E6E1D8] bg-white p-3"><div className="text-[10px] uppercase tracking-wide text-stone-400">{label}</div><div className="font-serif text-2xl text-stone-900">{value}</div>{note && <div className="text-[10px] text-stone-400">{note}</div>}</div>; }
+function FSel({ value, onChange, options }) { return <Select value={value} onValueChange={onChange}><SelectTrigger className="h-8 w-auto min-w-[110px] bg-white text-xs"><SelectValue /></SelectTrigger><SelectContent>{options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select>; }
+function Legend({ color, label }) { return <span className="inline-flex items-center gap-1"><span className={cn("h-2.5 w-2.5 rounded-[3px]", color)} />{label}</span>; }
+function Empty({ text }) { return <div className="rounded-lg border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-400">{text}</div>; }
