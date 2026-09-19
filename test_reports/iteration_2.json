@@ -1,0 +1,40 @@
+{
+  "summary": "Frontend-only regression + new-feature testing for FSOS iteration 2 (seed v2, HPN→BO displacement, same-day exception, collaboration linkage). Seed depth verified (124 ideas, 5 batches, 206 placements, 140 publications). Exception authorization, non-approver gating, collaboration linkage, and displacement (both reschedule and return-to-bank) all function correctly with respect to the underlying store actions. Found 1 real UI bug in ReplacementDialog where the default new-date is not populated on first open (state stale from initial null prop), forcing the user to pick a date manually even though candidate gaps are computed. Everything else works.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ReplacementDialog",
+        "issue": "repl-newdate input is empty on first open because useState(date ? addDays(date,1) : '') is initialized once at mount when the dialog is not yet open and the `date` prop is undefined. When the user opens it later, newDate stays ''. Clicking 'Confirm displacement' with Reschedule action then fires toast.error('Pick a new date...') and does nothing until the user manually types/clicks a suggested gap. Fix: add useEffect([date, open]) to sync newDate = addDays(date,1) when the dialog opens, OR remount the dialog with a `key={date}` prop, OR guard `if (!open) return null;` above the useState calls so state resets each time.",
+        "selector": "[data-testid=\"repl-newdate\"]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "ReplacementDialog / Radix Dialog",
+        "issues": ["Console a11y warning: 'Missing `Description` or `aria-describedby={undefined}` for {DialogContent}'. Add a <DialogDescription> or set aria-describedby={undefined} explicitly to silence."]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Fix ReplacementDialog newDate stale-state: default new-date should populate to date+1 (or first candidate gap) on every open. Currently it opens empty and blocks confirm until the user picks a date.",
+    "Silence Radix DialogContent aria-describedby warning by adding DialogDescription (or setting aria-describedby explicitly)."
+  ],
+  "critical_code_review_comments": [
+    "ReplacementDialog: `useMemo(hpnOptions, [db, open, ipId])` — no dependency on `date`; correct today, but `gaps` memo depends on `date/ipId/boIdea` — OK. However `newDate` should reset when a new BO chip is clicked (different `date`); current pattern makes it sticky across successive uses.",
+    "Distribution.js NetworkCalendar keeps `<ReplacementDialog />` permanently mounted (open={!!displace}), so its internal useState initializers only run once at parent mount. Any dialog whose defaults depend on props MUST use useEffect or a `key` to reset — same pattern risk applies elsewhere (worth auditing other dialogs).",
+    "Distribution.js: many nested functions inside a single 400+ line file; consider splitting NetworkCalendar / Today / IdeaMatrix into their own files for maintainability (currently 399 lines, borderline).",
+    "authorizeException correctly stamps `exceptionBy` and `exceptionAt`; UI 'exception' badge appears immediately after Record. Good.",
+    "linkCollaboration correctly appends versionId to existing pub without duplicating the publication row and flips isCollab=true. Verified pubs count unchanged."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "N/A (frontend-only test)", "frontend": "~92% — 1 HIGH bug (repl-newdate default) + 1 minor a11y warning" },
+  "seed_data_creation": "None — used the built-in v2 seed after localStorage.removeItem('fsos_db_v1').",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reset localStorage before each run: localStorage.removeItem('fsos_db_v1') then reload — seed rebuilds with meta.version=2 (124 ideas, 5 batches). For displacement testing on Calendar, note the newDate default bug: either manually fill the date input or click a candidate-gap chip before pressing 'Confirm displacement'. For exception button testing on Today, be careful with selectors — a bare `button:has-text(\"Record\")` matches both the exception 'Record' button and the 'Record live' button; scope to `[data-testid=\"conflict-<placementId>\"] button` instead. The seeded today repetition is on 'How Zerodha built a ₹30,000 Cr business…' across 101xf and FII. Non-approver test: switch role to Kabir Sethi (u-6) or Devraj Bose (u-9) — Authorise button is correctly hidden and message 'Only authorised editorial users can approve exceptions' is shown.",
+  "rca of the issue": "ReplacementDialog file line 20: `const [newDate, setNewDate] = useState(date ? addDays(date, 1) : \"\");` — React initializes state only on first mount. Because the dialog component is rendered from NetworkCalendar with open={!!displace} and stays mounted, this initializer runs once when `date` is undefined (dialog closed at parent mount), so newDate stays ''. Even the `if (!open || !boV) return null;` guard is placed AFTER the hooks (correctly, per Rules of Hooks) so it does not remount the state on open toggles. Fix options: (1) add `useEffect(() => { if (open && date) setNewDate(addDays(date, 1)); }, [open, date]);` (2) parent renders `{displace && <ReplacementDialog key={displace.date+displace.ipId} ... />}` so a new mount happens each open, (3) auto-select first candidate gap as newDate when gaps is non-empty."
+}

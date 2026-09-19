@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import * as Icons from "lucide-react";
 import { useDemo } from "../../domain/store";
 import { ideaById, ipById, publicationOf, candidateGaps, activePlacementOf } from "../../domain/selectors";
 import { StreamBadge, FormatBadge, IPBadge } from "../common/badges";
 import { fmtDate, addDays } from "../../domain/dates";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -17,7 +17,16 @@ export default function ReplacementDialog({ open, onClose, boVersionId, ipId, da
   const boIdea = boV && ideaById(db, boV.ideaId);
   const [hpnVersionId, setHpnVersionId] = useState("");
   const [boAction, setBoAction] = useState("reschedule");
-  const [newDate, setNewDate] = useState(date ? addDays(date, 1) : "");
+  const [newDate, setNewDate] = useState("");
+
+  // Sync defaults every time the dialog opens on a new slot (dialog stays mounted in parent).
+  useEffect(() => {
+    if (open && date) {
+      setHpnVersionId("");
+      setBoAction("reschedule");
+      setNewDate(addDays(date, 1));
+    }
+  }, [open, date, boVersionId]);
 
   const hpnOptions = useMemo(() => {
     if (!open) return [];
@@ -42,7 +51,9 @@ export default function ReplacementDialog({ open, onClose, boVersionId, ipId, da
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg" data-testid="replacement-dialog">
-        <DialogHeader><DialogTitle className="font-serif text-lg">HPN takes this BO slot</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle className="font-serif text-lg">HPN takes this BO slot</DialogTitle>
+          <DialogDescription className="sr-only">Place an HPN version into a BO calendar slot and choose whether to reschedule or return the displaced BO version.</DialogDescription>
+        </DialogHeader>
         <div className="space-y-4">
           <div className="rounded-md border border-blue-200 bg-blue-50/50 p-2.5">
             <div className="flex items-center gap-2 text-[11px] text-blue-800 mb-1"><StreamBadge stream="BO" /> displaced from <IPBadge ip={ipById(db, ipId)} /> · {fmtDate(date)}</div>
