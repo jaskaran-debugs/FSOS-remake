@@ -4,7 +4,7 @@ import { useDemo } from "../../domain/store";
 import { versionsOf, ideaById, ipById, userById, ideaDerivedState, ideaProgress, activePlacementOf, publicationOf, snapshotOf, targetFor, classify } from "../../domain/selectors";
 import { StreamBadge, StatusBadge, FormatBadge, IPBadge, VersionBadge, PerfBadge, Avatar } from "../common/badges";
 import { nowIso, istDateTimeLabel, fmtDate } from "../../domain/dates";
-import { Dialog, DialogContent } from "../ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -40,6 +40,7 @@ export default function IdeaCard({ ideaId, onClose, onOpenIdea }) {
   return (
     <Dialog open={!!ideaId} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-6xl w-[95vw] h-[90vh] p-0 gap-0 overflow-hidden flex flex-col" data-testid="idea-card-modal">
+        <DialogTitle className="sr-only">{idea.title}</DialogTitle>
         {/* Header */}
         <div className="border-b border-stone-200 px-6 py-4 bg-[#FAF8F5]">
           <div className="flex items-start gap-3">
